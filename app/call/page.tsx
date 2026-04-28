@@ -1,9 +1,6 @@
-import dynamic from "next/dynamic";
+"use client";
 
-const CallShell = dynamic(
-  () => import("@/components/CallShell").then((m) => m.CallShell),
-  { ssr: false }
-);
+import { CallShell } from "@/components/CallShell";
 
 export default function CallPage() {
   return <CallShell />;
