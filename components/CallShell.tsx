@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ConnectionState,
   RemoteAudioTrack,
@@ -10,16 +10,17 @@ import {
   type RemoteParticipant,
 } from "livekit-client";
 import { Avatar } from "./Avatar";
-import { ToolFeed } from "./ToolFeed";
 import { Transcript } from "./Transcript";
 import { SummaryView } from "./SummaryView";
-import type { SummaryPayload, ToolEvent, ToolFeedItem, TranscriptTurn } from "@/lib/types";
+import { toolLabel } from "@/lib/labels";
+import type { SummaryPayload, ToolEvent, TranscriptTurn } from "@/lib/types";
 
 type Phase = "idle" | "connecting" | "live" | "ended" | "summarizing" | "summary";
+type ToolTick = { name: ToolEvent["name"]; status: ToolEvent["status"]; ts: number };
 
 export function CallShell() {
   const [phase, setPhase] = useState<Phase>("idle");
-  const [tools, setTools] = useState<ToolFeedItem[]>([]);
+  const [tool, setTool] = useState<ToolTick | null>(null);
   const [turns, setTurns] = useState<TranscriptTurn[]>([]);
   const [summary, setSummary] = useState<SummaryPayload | null>(null);
   const [agentStream, setAgentStream] = useState<MediaStream | null>(null);
@@ -27,46 +28,36 @@ export function CallShell() {
 
   const roomRef = useRef<Room | null>(null);
   const roomNameRef = useRef<string | null>(null);
+  const toolTimerRef = useRef<number | null>(null);
 
-  // ---- Tool / transcript event handlers (room data channel) ----
   const onData = useCallback((payload: Uint8Array) => {
-    let parsed: ToolEvent | { type: "transcript"; role: "user" | "assistant"; text: string };
+    let parsed: ToolEvent | { type: string };
     try {
       parsed = JSON.parse(new TextDecoder().decode(payload));
-    } catch { return; }
+    } catch {
+      return;
+    }
     if (parsed.type === "tool") {
-      setTools((prev) => {
-        const ev = parsed as ToolEvent;
-        if (ev.status === "running") {
-          return [
-            ...prev,
-            { ...ev, id: `${ev.name}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, ts: Date.now() },
-          ];
-        }
-        const idx = [...prev].reverse().findIndex(
-          (i) => i.name === ev.name && i.status === "running"
-        );
-        if (idx === -1) {
-          return [
-            ...prev,
-            { ...ev, id: `${ev.name}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, ts: Date.now() },
-          ];
-        }
-        const realIdx = prev.length - 1 - idx;
-        const next = [...prev];
-        next[realIdx] = { ...next[realIdx], ...ev };
-        return next;
-      });
+      const ev = parsed as ToolEvent;
+      setTool({ name: ev.name, status: ev.status, ts: Date.now() });
+      if (toolTimerRef.current) window.clearTimeout(toolTimerRef.current);
+      if (ev.status === "done") {
+        toolTimerRef.current = window.setTimeout(() => setTool(null), 3500);
+      }
     }
   }, []);
 
   const connect = useCallback(async () => {
     setPhase("connecting");
-    setTools([]); setTurns([]); setSummary(null);
+    setTool(null);
+    setTurns([]);
+    setSummary(null);
 
-    const r = await fetch("/api/token", { method: "POST", body: "{}" }).then((x) => x.json());
+    const r = await fetch("/api/token", { method: "POST", body: "{}" }).then((x) =>
+      x.json()
+    );
     if (!r.token || !r.url) {
-      alert("Token endpoint failed. Check LIVEKIT env vars.");
+      alert("Token endpoint failed.");
       setPhase("idle");
       return;
     }
@@ -82,18 +73,22 @@ export function CallShell() {
         const at = track as RemoteAudioTrack;
         const ms = new MediaStream([at.mediaStreamTrack]);
         setAgentStream(ms);
-        at.attach(); // creates a hidden audio el; don't append; LiveKit plays via track auto-attach if we add a sink
+        at.attach();
       }
     });
 
-    room.on(RoomEvent.ActiveSpeakersChanged, (speakers: RemoteParticipant[] | { identity: string }[]) => {
-      setAgentSpeaking(
-        (speakers as { identity: string }[]).some((p) => p.identity?.startsWith("agent"))
-      );
-    });
+    room.on(
+      RoomEvent.ActiveSpeakersChanged,
+      (speakers: RemoteParticipant[] | { identity: string }[]) => {
+        setAgentSpeaking(
+          (speakers as { identity: string }[]).some((p) =>
+            p.identity?.startsWith("agent")
+          )
+        );
+      }
+    );
 
     room.on(RoomEvent.TranscriptionReceived, (segments) => {
-      // LiveKit auto-emitted user transcription; assistant text comes via item events on agent side.
       for (const seg of segments) {
         if (!seg.final) continue;
         setTurns((prev) => [...prev, { role: "user", text: seg.text, ts: Date.now() }]);
@@ -101,7 +96,8 @@ export function CallShell() {
     });
 
     room.on(RoomEvent.ConnectionStateChanged, (s) => {
-      if (s === ConnectionState.Disconnected) setPhase((p) => (p === "live" ? "ended" : p));
+      if (s === ConnectionState.Disconnected)
+        setPhase((p) => (p === "live" ? "ended" : p));
     });
 
     await room.connect(r.url, r.token);
@@ -113,8 +109,13 @@ export function CallShell() {
     setPhase("summarizing");
     const room = roomRef.current;
     const name = roomNameRef.current;
-    try { await room?.disconnect(); } catch {}
-    if (!name) { setPhase("idle"); return; }
+    try {
+      await room?.disconnect();
+    } catch {}
+    if (!name) {
+      setPhase("idle");
+      return;
+    }
 
     const backend = process.env.NEXT_PUBLIC_BACKEND_URL || "";
     try {
@@ -132,45 +133,61 @@ export function CallShell() {
     }
   }, []);
 
-  useEffect(() => () => { roomRef.current?.disconnect().catch(() => {}); }, []);
+  useEffect(
+    () => () => {
+      roomRef.current?.disconnect().catch(() => {});
+    },
+    []
+  );
 
-  const isLive = phase === "live" || phase === "connecting";
+  const live = phase === "live" || phase === "connecting";
+  const summarizing = phase === "summarizing";
 
-  // ---- Render ----
   if (phase === "summary" || phase === "summarizing") {
     return (
-      <main className="mx-auto min-h-dvh max-w-[1200px] px-8 py-10">
-        <Header phase={phase} onPrimary={() => { setPhase("idle"); setSummary(null); }} />
-        <div className="rule mt-8" />
+      <main className="mx-auto min-h-dvh max-w-[680px] px-6 py-8">
+        <Header
+          phase={phase}
+          onPrimary={() => {
+            setPhase("idle");
+            setSummary(null);
+          }}
+        />
         <section className="mt-16">
-          <SummaryView data={summary} loading={phase === "summarizing"} />
+          <SummaryView data={summary} loading={summarizing} />
         </section>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto min-h-dvh max-w-[1200px] px-8 py-10">
-      <Header phase={phase} onPrimary={isLive ? hangup : connect} />
-      <div className="rule mt-8" />
+    <main className="mx-auto flex min-h-dvh max-w-[680px] flex-col px-6 py-8">
+      <Header phase={phase} onPrimary={live ? hangup : connect} />
 
-      <section className="mt-10 grid grid-cols-12 gap-8">
-        {/* Left: avatar + tool feed */}
-        <div className="col-span-12 md:col-span-5">
-          <div className="max-w-[360px]">
-            <Avatar stream={agentStream} speaking={agentSpeaking} />
-          </div>
-          <div className="mt-8 max-w-[420px]">
-            <ToolFeed items={tools} />
-          </div>
+      <section className="mt-12 flex flex-col items-center">
+        <div className="h-5 text-[11px] uppercase tracking-[0.2em] text-[color:var(--color-signal)]">
+          {tool ? (
+            <span className="tool-in">
+              {toolLabel(tool.name)}
+              {tool.status === "running" ? "…" : ""}
+            </span>
+          ) : null}
         </div>
 
-        {/* Right: transcript */}
-        <div className="col-span-12 md:col-span-7 md:pl-10 md:border-l border-[color:var(--color-line)]">
-          <div className="h-[640px]">
-            <Transcript turns={turns} />
-          </div>
+        <div className="mt-6">
+          <Avatar stream={agentStream} speaking={agentSpeaking} live={live} />
         </div>
+
+        <p className="mt-6 text-[12px] text-[color:var(--color-mute)]">
+          {phase === "idle" && "Ready"}
+          {phase === "connecting" && "Connecting"}
+          {phase === "live" && (agentSpeaking ? "Mira speaking" : "Listening")}
+          {phase === "ended" && "Call ended"}
+        </p>
+      </section>
+
+      <section className="mt-10 flex-1 min-h-[240px]">
+        <Transcript turns={turns} />
       </section>
     </main>
   );
@@ -179,46 +196,38 @@ export function CallShell() {
 function Header({ phase, onPrimary }: { phase: Phase; onPrimary: () => void }) {
   const live = phase === "live" || phase === "connecting";
   const summarizing = phase === "summarizing";
-  const summary = phase === "summary";
+  const done = phase === "summary";
+  const label = done
+    ? "New call"
+    : live
+    ? "End"
+    : summarizing
+    ? "…"
+    : "Start call";
+
   return (
-    <header className="flex items-baseline justify-between gap-6">
-      <div className="flex items-baseline gap-3">
-        <span
-          className="font-[family-name:var(--font-display)] text-[28px] leading-none tracking-tight"
-          style={{ color: "var(--color-sage-deep)" }}
-        >
-          Mira
-        </span>
-        <span
-          className="text-[11px] uppercase tracking-[0.22em]"
-          style={{ color: "var(--color-ink-mute)" }}
-        >
-          {phase === "idle" && "ready when you are"}
-          {phase === "connecting" && "connecting"}
-          {phase === "live" && "in conversation"}
-          {phase === "ended" && "call ended"}
-          {phase === "summarizing" && "composing summary"}
-          {phase === "summary" && "after the call"}
-        </span>
+    <header className="flex items-center justify-between text-[12px]">
+      <div className="flex items-center gap-3">
+        <span className="font-medium tracking-tight">Mira</span>
+        {live && (
+          <span className="flex items-center gap-1.5 text-[color:var(--color-signal)]">
+            <span className="signal-pulse h-1.5 w-1.5 rounded-full bg-[color:var(--color-signal)]" />
+            live
+          </span>
+        )}
       </div>
 
       <button
         onClick={onPrimary}
         disabled={summarizing}
-        className="group inline-flex items-center gap-3 rounded-full px-5 py-2.5 text-[13px] tracking-tight transition disabled:opacity-50"
+        className="inline-flex items-center gap-2 px-4 py-2 text-[13px] font-medium transition disabled:opacity-40"
         style={{
           background: live ? "transparent" : "var(--color-ink)",
-          color: live ? "var(--color-ink)" : "var(--color-bone)",
+          color: live ? "var(--color-ink)" : "var(--color-paper)",
           border: live ? "1px solid var(--color-ink)" : "none",
         }}
       >
-        {live && (
-          <span className="relative flex h-2 w-2 items-center justify-center" aria-hidden>
-            <span className="absolute h-2 w-2 rounded-full" style={{ background: "var(--color-clay)" }} />
-            <span className="absolute h-2 w-2 rounded-full live-ring" style={{ background: "var(--color-clay)" }} />
-          </span>
-        )}
-        {summary ? "Begin again" : live ? "End call" : summarizing ? "Composing…" : "Begin a call"}
+        {label}
       </button>
     </header>
   );

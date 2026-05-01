@@ -2,10 +2,6 @@
 
 Next.js 16 App Router · LiveKit React · Tailwind v4 · Motion · animated SVG avatar.
 
-## Aesthetic
-
-Editorial clinical luxury — bone cream, deep sage, terracotta accent. Instrument Serif (display) + Geist Sans (body). Asymmetric two-column layout. Hand-drawn rules. Tool calls render as serif italic ticker entries with live status pulse.
-
 ## Layout
 
 | Path | Purpose |
