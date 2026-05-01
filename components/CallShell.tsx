@@ -1,14 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ConnectionState,
-  RemoteAudioTrack,
-  Room,
-  RoomEvent,
-  Track,
-  type RemoteParticipant,
-} from "livekit-client";
+import DailyIframe, { DailyCall } from "@daily-co/daily-js";
+import { DailyProvider, useDaily, useDailyEvent } from "@daily-co/daily-react";
 import { Avatar } from "./Avatar";
 import { Transcript } from "./Transcript";
 import { SummaryView } from "./SummaryView";
@@ -16,36 +10,139 @@ import { toolLabel } from "@/lib/labels";
 import type { SummaryPayload, ToolEvent, TranscriptTurn } from "@/lib/types";
 
 type Phase = "idle" | "connecting" | "live" | "ended" | "summarizing" | "summary";
-type ToolTick = { name: ToolEvent["name"]; status: ToolEvent["status"]; ts: number };
+type ToolTick = { name: ToolEvent["name"]; ts: number };
+
+const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || "";
 
 export function CallShell() {
+  const [call, setCall] = useState<DailyCall | null>(null);
+
+  useEffect(() => {
+    const c = DailyIframe.createCallObject({
+      audioSource: true,
+      videoSource: false,
+    });
+    setCall(c);
+    return () => {
+      c.destroy();
+    };
+  }, []);
+
+  if (!call) return null;
+
+  return (
+    <DailyProvider callObject={call}>
+      <Inner />
+    </DailyProvider>
+  );
+}
+
+function Inner() {
+  const daily = useDaily();
   const [phase, setPhase] = useState<Phase>("idle");
   const [tool, setTool] = useState<ToolTick | null>(null);
   const [turns, setTurns] = useState<TranscriptTurn[]>([]);
   const [summary, setSummary] = useState<SummaryPayload | null>(null);
-  const [agentStream, setAgentStream] = useState<MediaStream | null>(null);
-  const [agentSpeaking, setAgentSpeaking] = useState(false);
-
-  const roomRef = useRef<Room | null>(null);
-  const roomNameRef = useRef<string | null>(null);
+  const conversationIdRef = useRef<string | null>(null);
   const toolTimerRef = useRef<number | null>(null);
 
-  const onData = useCallback((payload: Uint8Array) => {
-    let parsed: ToolEvent | { type: string };
-    try {
-      parsed = JSON.parse(new TextDecoder().decode(payload));
-    } catch {
-      return;
-    }
-    if (parsed.type === "tool") {
-      const ev = parsed as ToolEvent;
-      setTool({ name: ev.name, status: ev.status, ts: Date.now() });
-      if (toolTimerRef.current) window.clearTimeout(toolTimerRef.current);
-      if (ev.status === "done") {
-        toolTimerRef.current = window.setTimeout(() => setTool(null), 3500);
+  const sendRespond = useCallback(
+    (text: string) => {
+      daily?.sendAppMessage(
+        { message_type: "conversation", event_type: "conversation.respond", properties: { text } },
+        "*"
+      );
+    },
+    [daily]
+  );
+
+  const runTool = useCallback(
+    async (name: string, args: Record<string, unknown>) => {
+      const conv = conversationIdRef.current;
+      try {
+        const r = await fetch(`${BACKEND}/tools/${name}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ args, conversation_id: conv }),
+        });
+        const data = await r.json();
+        return data.result ?? { ok: false, error: "no_result" };
+      } catch (e) {
+        return { ok: false, error: String(e) };
       }
-    }
-  }, []);
+    },
+    []
+  );
+
+  useDailyEvent(
+    "app-message",
+    useCallback(
+      async (ev: { data?: { event_type?: string; message_type?: string; properties?: Record<string, unknown> } }) => {
+        const d = ev.data ?? {};
+        const type = d.event_type || d.message_type || "";
+        const props = (d.properties ?? {}) as Record<string, unknown>;
+
+        if (type === "conversation.tool_call") {
+          const name = String(props.name || "");
+          let args: Record<string, unknown> = {};
+          const raw = props.arguments;
+          if (typeof raw === "string") {
+            try {
+              args = JSON.parse(raw);
+            } catch {
+              args = {};
+            }
+          } else if (raw && typeof raw === "object") {
+            args = raw as Record<string, unknown>;
+          }
+
+          setTool({ name: name as ToolEvent["name"], ts: Date.now() });
+          if (toolTimerRef.current) window.clearTimeout(toolTimerRef.current);
+
+          const result = await runTool(name, args);
+          sendRespond(`Tool ${name} returned: ${JSON.stringify(result)}`);
+
+          toolTimerRef.current = window.setTimeout(() => setTool(null), 3500);
+          return;
+        }
+
+        if (type === "conversation.utterance" || type.endsWith("utterance")) {
+          const role = String(props.role || props.speaker || "user");
+          const text = String(props.speech || props.text || "");
+          if (!text.trim()) return;
+          const isReplica = role.startsWith("repl") || role === "replica" || role === "assistant";
+          const turn: TranscriptTurn = {
+            role: isReplica ? "assistant" : "user",
+            text,
+            ts: Date.now(),
+          };
+          setTurns((p) => [...p, turn]);
+          if (conversationIdRef.current) {
+            fetch(`${BACKEND}/transcript`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                conversation_id: conversationIdRef.current,
+                role: turn.role,
+                text: turn.text,
+              }),
+            }).catch(() => {});
+          }
+        }
+      },
+      [runTool, sendRespond]
+    )
+  );
+
+  useDailyEvent(
+    "joined-meeting",
+    useCallback(() => setPhase("live"), [])
+  );
+
+  useDailyEvent(
+    "left-meeting",
+    useCallback(() => setPhase((p) => (p === "live" ? "ended" : p)), [])
+  );
 
   const connect = useCallback(async () => {
     setPhase("connecting");
@@ -53,92 +150,52 @@ export function CallShell() {
     setTurns([]);
     setSummary(null);
 
-    const r = await fetch("/api/token", { method: "POST", body: "{}" }).then((x) =>
-      x.json()
-    );
-    if (!r.token || !r.url) {
-      alert("Token endpoint failed.");
+    let conv: { conversation_id: string; conversation_url: string; meeting_token?: string };
+    try {
+      conv = await fetch(`${BACKEND}/tavus/start`, { method: "POST" }).then((r) => r.json());
+    } catch (e) {
+      alert("Failed to start call");
       setPhase("idle");
       return;
     }
-    roomNameRef.current = r.room;
+    conversationIdRef.current = conv.conversation_id;
 
-    const room = new Room({ adaptiveStream: true, dynacast: true });
-    roomRef.current = room;
-
-    room.on(RoomEvent.DataReceived, onData);
-
-    room.on(RoomEvent.TrackSubscribed, (track, _pub, participant) => {
-      if (track.kind === Track.Kind.Audio && participant.identity.startsWith("agent")) {
-        const at = track as RemoteAudioTrack;
-        const ms = new MediaStream([at.mediaStreamTrack]);
-        setAgentStream(ms);
-        at.attach();
-      }
-    });
-
-    room.on(
-      RoomEvent.ActiveSpeakersChanged,
-      (speakers: RemoteParticipant[] | { identity: string }[]) => {
-        setAgentSpeaking(
-          (speakers as { identity: string }[]).some((p) =>
-            p.identity?.startsWith("agent")
-          )
-        );
-      }
-    );
-
-    room.on(RoomEvent.TranscriptionReceived, (segments) => {
-      for (const seg of segments) {
-        if (!seg.final) continue;
-        setTurns((prev) => [...prev, { role: "user", text: seg.text, ts: Date.now() }]);
-      }
-    });
-
-    room.on(RoomEvent.ConnectionStateChanged, (s) => {
-      if (s === ConnectionState.Disconnected)
-        setPhase((p) => (p === "live" ? "ended" : p));
-    });
-
-    await room.connect(r.url, r.token);
-    await room.localParticipant.setMicrophoneEnabled(true);
-    setPhase("live");
-  }, [onData]);
+    try {
+      await daily?.join({
+        url: conv.conversation_url,
+        token: conv.meeting_token,
+        startAudioOff: false,
+        startVideoOff: true,
+      });
+    } catch (e) {
+      console.error(e);
+      setPhase("idle");
+    }
+  }, [daily]);
 
   const hangup = useCallback(async () => {
     setPhase("summarizing");
-    const room = roomRef.current;
-    const name = roomNameRef.current;
     try {
-      await room?.disconnect();
+      await daily?.leave();
     } catch {}
-    if (!name) {
+    const room = conversationIdRef.current;
+    if (!room) {
       setPhase("idle");
       return;
     }
-
-    const backend = process.env.NEXT_PUBLIC_BACKEND_URL || "";
     try {
-      const res = await fetch(`${backend}/summary`, {
+      const data = (await fetch(`${BACKEND}/summary`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ room: name }),
-      });
-      const data = (await res.json()) as SummaryPayload;
+        body: JSON.stringify({ room }),
+      }).then((r) => r.json())) as SummaryPayload;
       setSummary(data);
       setPhase("summary");
     } catch (e) {
       console.error(e);
       setPhase("ended");
     }
-  }, []);
-
-  useEffect(
-    () => () => {
-      roomRef.current?.disconnect().catch(() => {});
-    },
-    []
-  );
+  }, [daily]);
 
   const live = phase === "live" || phase === "connecting";
   const summarizing = phase === "summarizing";
@@ -151,6 +208,7 @@ export function CallShell() {
           onPrimary={() => {
             setPhase("idle");
             setSummary(null);
+            setTurns([]);
           }}
         />
         <section className="mt-16">
@@ -166,22 +224,17 @@ export function CallShell() {
 
       <section className="mt-12 flex flex-col items-center">
         <div className="h-5 text-[11px] uppercase tracking-[0.2em] text-[color:var(--color-signal)]">
-          {tool ? (
-            <span className="tool-in">
-              {toolLabel(tool.name)}
-              {tool.status === "running" ? "…" : ""}
-            </span>
-          ) : null}
+          {tool ? <span className="tool-in">{toolLabel(tool.name)}</span> : null}
         </div>
 
         <div className="mt-6">
-          <Avatar stream={agentStream} speaking={agentSpeaking} live={live} />
+          <Avatar live={live} />
         </div>
 
         <p className="mt-6 text-[12px] text-[color:var(--color-mute)]">
           {phase === "idle" && "Ready"}
           {phase === "connecting" && "Connecting"}
-          {phase === "live" && (agentSpeaking ? "Mira speaking" : "Listening")}
+          {phase === "live" && "Live"}
           {phase === "ended" && "Call ended"}
         </p>
       </section>
@@ -197,13 +250,7 @@ function Header({ phase, onPrimary }: { phase: Phase; onPrimary: () => void }) {
   const live = phase === "live" || phase === "connecting";
   const summarizing = phase === "summarizing";
   const done = phase === "summary";
-  const label = done
-    ? "New call"
-    : live
-    ? "End"
-    : summarizing
-    ? "…"
-    : "Start call";
+  const label = done ? "New call" : live ? "End" : summarizing ? "…" : "Start call";
 
   return (
     <header className="flex items-center justify-between text-[12px]">
