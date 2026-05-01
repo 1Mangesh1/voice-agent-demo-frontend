@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import {
   DailyVideo,
   useParticipantIds,
@@ -9,8 +10,11 @@ import {
 export function Avatar({ live }: { live: boolean }) {
   const remotes = useParticipantIds({ filter: "remote" });
   const replicaId = remotes[0];
-  const videoTrack = useVideoTrack(replicaId ?? "");
-  const hasVideo = !!videoTrack?.persistentTrack;
+  const track = useVideoTrack(replicaId ?? "");
+
+  useEffect(() => {
+    if (replicaId) console.log("[avatar] replica", replicaId, "track state:", track?.state, "subscribed:", track?.subscribed);
+  }, [replicaId, track?.state, track?.subscribed]);
 
   return (
     <div
@@ -20,7 +24,7 @@ export function Avatar({ live }: { live: boolean }) {
         border: live ? "1px solid var(--color-signal)" : "1px solid var(--color-hairline)",
       }}
     >
-      {replicaId && hasVideo ? (
+      {replicaId ? (
         <DailyVideo
           sessionId={replicaId}
           type="video"

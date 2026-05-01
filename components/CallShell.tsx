@@ -20,6 +20,7 @@ type ToolStatus = "running" | "done" | "failed";
 type ToolTick = { name: ToolEvent["name"]; status: ToolStatus; ts: number };
 
 const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || "";
+const TOOL_PREFIX = "[tool_result]";
 
 export function CallShell() {
   const [call, setCall] = useState<DailyCall | null>(null);
@@ -108,7 +109,7 @@ function Inner() {
           if (toolTimerRef.current) window.clearTimeout(toolTimerRef.current);
 
           const result = await runTool(name, args);
-          sendRespond(`Tool ${name} returned: ${JSON.stringify(result)}`);
+          sendRespond(`${TOOL_PREFIX} ${name} ${JSON.stringify(result)}`);
 
           const ok = result?.ok === true;
           setTool({
@@ -124,6 +125,7 @@ function Inner() {
           const role = String(props.role || props.speaker || "user");
           const text = String(props.speech || props.text || "");
           if (!text.trim()) return;
+          if (text.includes(TOOL_PREFIX)) return;
           const isReplica = role.startsWith("repl") || role === "replica" || role === "assistant";
           const turn: TranscriptTurn = {
             role: isReplica ? "assistant" : "user",
