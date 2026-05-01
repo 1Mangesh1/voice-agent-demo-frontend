@@ -13,8 +13,6 @@ export type ToolEvent = {
   result?: { ok: boolean; [k: string]: unknown };
 };
 
-export type ToolFeedItem = ToolEvent & { id: string; ts: number };
-
 export type TranscriptTurn = { role: "user" | "assistant"; text: string; ts: number };
 
 export type SummaryPayload = {
