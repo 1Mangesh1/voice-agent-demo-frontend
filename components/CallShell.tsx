@@ -160,13 +160,15 @@ function Inner() {
     }
     conversationIdRef.current = conv.conversation_id;
 
+    const joinArgs: Parameters<NonNullable<typeof daily>["join"]>[0] = {
+      url: conv.conversation_url,
+      startAudioOff: false,
+      startVideoOff: true,
+    };
+    if (conv.meeting_token) joinArgs.token = conv.meeting_token;
+
     try {
-      await daily?.join({
-        url: conv.conversation_url,
-        token: conv.meeting_token,
-        startAudioOff: false,
-        startVideoOff: true,
-      });
+      await daily?.join(joinArgs);
     } catch (e) {
       console.error(e);
       setPhase("idle");
