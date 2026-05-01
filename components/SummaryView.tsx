@@ -77,9 +77,33 @@ export function SummaryView({
         </section>
       ) : null}
 
-      <p className="mt-12 text-[11px] text-[color:var(--color-mute)] tabular-nums">
-        {data?.ended_at ? new Date(data.ended_at).toLocaleString() : "—"}
-      </p>
+      <section className="mt-12 grid grid-cols-3 gap-6 text-[11px] text-[color:var(--color-mute)]">
+        <div>
+          <p className="uppercase tracking-[0.2em]">duration</p>
+          <p className="mt-1 text-[14px] tabular-nums text-[color:var(--color-ink)]">
+            {fmtDuration(data?.duration_seconds)}
+          </p>
+        </div>
+        <div>
+          <p className="uppercase tracking-[0.2em]">cost</p>
+          <p className="mt-1 text-[14px] tabular-nums text-[color:var(--color-ink)]">
+            {data?.cost_usd != null ? `$${data.cost_usd.toFixed(3)}` : "—"}
+          </p>
+        </div>
+        <div>
+          <p className="uppercase tracking-[0.2em]">stamped</p>
+          <p className="mt-1 text-[14px] tabular-nums text-[color:var(--color-ink)]">
+            {data?.ended_at ? new Date(data.ended_at).toLocaleTimeString() : "—"}
+          </p>
+        </div>
+      </section>
     </div>
   );
+}
+
+function fmtDuration(s: number | null | undefined): string {
+  if (s == null) return "—";
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${r.toString().padStart(2, "0")}`;
 }

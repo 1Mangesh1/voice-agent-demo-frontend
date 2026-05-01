@@ -22,6 +22,8 @@ export type SummaryPayload = {
   summary: string | null;
   started_at: string | null;
   ended_at: string | null;
+  duration_seconds: number | null;
+  cost_usd: number | null;
   user_phone: string | null;
   appointments: { id: number; slot: string; status: string }[];
 };

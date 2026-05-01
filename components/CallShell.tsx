@@ -16,7 +16,8 @@ import { toolLabel } from "@/lib/labels";
 import type { SummaryPayload, ToolEvent, TranscriptTurn } from "@/lib/types";
 
 type Phase = "idle" | "connecting" | "live" | "ended" | "summarizing" | "summary";
-type ToolTick = { name: ToolEvent["name"]; ts: number };
+type ToolStatus = "running" | "done" | "failed";
+type ToolTick = { name: ToolEvent["name"]; status: ToolStatus; ts: number };
 
 const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || "";
 
@@ -103,12 +104,18 @@ function Inner() {
             args = raw as Record<string, unknown>;
           }
 
-          setTool({ name: name as ToolEvent["name"], ts: Date.now() });
+          setTool({ name: name as ToolEvent["name"], status: "running", ts: Date.now() });
           if (toolTimerRef.current) window.clearTimeout(toolTimerRef.current);
 
           const result = await runTool(name, args);
           sendRespond(`Tool ${name} returned: ${JSON.stringify(result)}`);
 
+          const ok = result?.ok === true;
+          setTool({
+            name: name as ToolEvent["name"],
+            status: ok ? "done" : "failed",
+            ts: Date.now(),
+          });
           toolTimerRef.current = window.setTimeout(() => setTool(null), 3500);
           return;
         }
@@ -252,7 +259,13 @@ function Inner() {
 
       <section className="mt-12 flex flex-col items-center">
         <div className="h-5 text-[11px] uppercase tracking-[0.2em] text-[color:var(--color-signal)]">
-          {tool ? <span className="tool-in">{toolLabel(tool.name)}</span> : null}
+          {tool ? (
+            <span className="tool-in">
+              {tool.status === "running" && `${toolLabel(tool.name)}…`}
+              {tool.status === "done" && `✓ ${toolLabel(tool.name)} done`}
+              {tool.status === "failed" && `✗ ${toolLabel(tool.name)} failed`}
+            </span>
+          ) : null}
         </div>
 
         <div className="mt-6">
