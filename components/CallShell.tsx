@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import DailyIframe, { DailyCall } from "@daily-co/daily-js";
-import { DailyAudio, DailyProvider, useDaily, useDailyEvent } from "@daily-co/daily-react";
+import {
+  DailyAudio,
+  DailyProvider,
+  useDaily,
+  useDailyEvent,
+  useParticipantIds,
+} from "@daily-co/daily-react";
 import { Avatar } from "./Avatar";
 import { Transcript } from "./Transcript";
 import { SummaryView } from "./SummaryView";
@@ -21,6 +27,7 @@ export function CallShell() {
     const c = DailyIframe.createCallObject({
       audioSource: true,
       videoSource: false,
+      subscribeToTracksAutomatically: true,
     });
     setCall(c);
     return () => {
@@ -136,7 +143,25 @@ function Inner() {
 
   useDailyEvent(
     "joined-meeting",
-    useCallback(() => setPhase("live"), [])
+    useCallback(() => {
+      console.log("[daily] joined-meeting");
+      setPhase("live");
+    }, [])
+  );
+
+  useDailyEvent(
+    "participant-joined",
+    useCallback((ev) => console.log("[daily] participant-joined", ev?.participant?.user_name, ev?.participant?.session_id), [])
+  );
+
+  useDailyEvent(
+    "track-started",
+    useCallback((ev) => console.log("[daily] track-started", ev?.participant?.user_name, ev?.track?.kind), [])
+  );
+
+  useDailyEvent(
+    "error",
+    useCallback((ev) => console.error("[daily] error", ev), [])
   );
 
   useDailyEvent(
@@ -201,6 +226,7 @@ function Inner() {
 
   const live = phase === "live" || phase === "connecting";
   const summarizing = phase === "summarizing";
+  const remoteIds = useParticipantIds({ filter: "remote" });
 
   if (phase === "summary" || phase === "summarizing") {
     return (
@@ -236,9 +262,14 @@ function Inner() {
         <p className="mt-6 text-[12px] text-[color:var(--color-mute)]">
           {phase === "idle" && "Ready"}
           {phase === "connecting" && "Connecting"}
-          {phase === "live" && "Live"}
+          {phase === "live" && (remoteIds.length > 0 ? "Live" : "Waiting for Mira…")}
           {phase === "ended" && "Call ended"}
         </p>
+        {live && (
+          <p className="mt-1 text-[10px] text-[color:var(--color-mute)] tabular-nums">
+            participants: {remoteIds.length}
+          </p>
+        )}
       </section>
 
       <section className="mt-10 flex-1 min-h-[240px]">
