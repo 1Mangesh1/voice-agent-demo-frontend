@@ -11,6 +11,10 @@ Two pages: landing + call. Call page is where the work happens.
 - Backend health: https://voice-agent-demo-api.onrender.com/health
 - Demo recording: _(coming Fri)_
 
+## On the live demo
+
+Tavus's free tier caps at 25 conversation-minutes/month. The demo recording is the canonical walkthrough; the live URL is functional but rate-limited. Free-tier artifact, not a production constraint.
+
 ## Stack note
 
 Backend runs Tavus CVI for the whole voice pipeline (STT + LLM + TTS + talking avatar). This frontend owns:
