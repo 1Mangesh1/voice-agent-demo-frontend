@@ -257,8 +257,8 @@ function Inner() {
           ) : null}
         </div>
 
-        <div className="mt-6">
-          <Avatar live={live} />
+        <div className="mt-6 w-full max-w-[480px]">
+          <Avatar />
         </div>
 
         <p className="mt-6 text-[12px] text-[color:var(--color-mute)]">
