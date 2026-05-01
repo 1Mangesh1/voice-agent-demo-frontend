@@ -8,13 +8,16 @@ import {
 } from "@daily-co/daily-react";
 
 export function Avatar({ live }: { live: boolean }) {
-  const remotes = useParticipantIds({ filter: "remote" });
-  const replicaId = remotes[0];
-  const track = useVideoTrack(replicaId ?? "");
+  const replicaIds = useParticipantIds({
+    filter: (p) => p.user_id?.includes("tavus-replica") ?? false,
+  });
+  const replicaId = replicaIds[0];
+  const videoState = useVideoTrack(replicaId ?? "");
 
   useEffect(() => {
-    if (replicaId) console.log("[avatar] replica", replicaId, "track state:", track?.state, "subscribed:", track?.subscribed);
-  }, [replicaId, track?.state, track?.subscribed]);
+    if (replicaId)
+      console.log("[avatar] replica", replicaId, "isOff:", videoState?.isOff, "state:", videoState?.state);
+  }, [replicaId, videoState?.isOff, videoState?.state]);
 
   return (
     <div
@@ -31,8 +34,11 @@ export function Avatar({ live }: { live: boolean }) {
           automirror={false}
           fit="cover"
           className="absolute inset-0 h-full w-full"
+          style={{ display: videoState?.isOff ? "none" : "block" }}
         />
-      ) : (
+      ) : null}
+
+      {(!replicaId || videoState?.isOff) && (
         <div
           className={`absolute inset-1/4 rounded-full ${live ? "breathe" : ""}`}
           style={{ background: live ? "var(--color-signal)" : "transparent" }}

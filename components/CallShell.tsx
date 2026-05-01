@@ -198,6 +198,9 @@ function Inner() {
       url: conv.conversation_url,
       startAudioOff: false,
       startVideoOff: true,
+      inputSettings: {
+        audio: { processor: { type: "noise-cancellation" } },
+      },
     };
     if (conv.meeting_token) joinArgs.token = conv.meeting_token;
 
