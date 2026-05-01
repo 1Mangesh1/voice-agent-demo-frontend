@@ -1,11 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
-import {
-  DailyVideo,
-  useParticipantIds,
-  useVideoTrack,
-} from "@daily-co/daily-react";
+import { useEffect, useRef } from "react";
+import { useParticipantIds, useVideoTrack } from "@daily-co/daily-react";
 
 export function Avatar({ live }: { live: boolean }) {
   const replicaIds = useParticipantIds({
@@ -13,11 +9,34 @@ export function Avatar({ live }: { live: boolean }) {
   });
   const replicaId = replicaIds[0];
   const videoState = useVideoTrack(replicaId ?? "");
+  const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
     if (replicaId)
-      console.log("[avatar] replica", replicaId, "isOff:", videoState?.isOff, "state:", videoState?.state);
-  }, [replicaId, videoState?.isOff, videoState?.state]);
+      console.log(
+        "[avatar] replica",
+        replicaId,
+        "isOff:",
+        videoState?.isOff,
+        "state:",
+        videoState?.state,
+        "hasTrack:",
+        !!videoState?.persistentTrack
+      );
+  }, [replicaId, videoState?.isOff, videoState?.state, videoState?.persistentTrack]);
+
+  useEffect(() => {
+    const el = videoRef.current;
+    const track = videoState?.persistentTrack;
+    if (!el || !track) return;
+    el.srcObject = new MediaStream([track]);
+    el.play().catch(() => {});
+    return () => {
+      el.srcObject = null;
+    };
+  }, [videoState?.persistentTrack]);
+
+  const showVideo = replicaId && videoState?.persistentTrack && !videoState?.isOff;
 
   return (
     <div
@@ -27,18 +46,16 @@ export function Avatar({ live }: { live: boolean }) {
         border: live ? "1px solid var(--color-signal)" : "1px solid var(--color-hairline)",
       }}
     >
-      {replicaId ? (
-        <DailyVideo
-          sessionId={replicaId}
-          type="video"
-          automirror={false}
-          fit="cover"
-          className="absolute inset-0 h-full w-full"
-          style={{ display: videoState?.isOff ? "none" : "block" }}
-        />
-      ) : null}
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        className="absolute inset-0 h-full w-full"
+        style={{ objectFit: "cover", display: showVideo ? "block" : "none" }}
+      />
 
-      {(!replicaId || videoState?.isOff) && (
+      {!showVideo && (
         <div
           className={`absolute inset-1/4 rounded-full ${live ? "breathe" : ""}`}
           style={{ background: live ? "var(--color-signal)" : "transparent" }}
