@@ -12,20 +12,6 @@ export function Avatar({ live }: { live: boolean }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
-    if (replicaId)
-      console.log(
-        "[avatar] replica",
-        replicaId,
-        "isOff:",
-        videoState?.isOff,
-        "state:",
-        videoState?.state,
-        "hasTrack:",
-        !!videoState?.persistentTrack
-      );
-  }, [replicaId, videoState?.isOff, videoState?.state, videoState?.persistentTrack]);
-
-  useEffect(() => {
     const el = videoRef.current;
     const track = videoState?.persistentTrack;
     if (!el || !track) return;

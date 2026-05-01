@@ -152,30 +152,17 @@ function Inner() {
 
   useDailyEvent(
     "joined-meeting",
-    useCallback(() => {
-      console.log("[daily] joined-meeting");
-      setPhase("live");
-    }, [])
-  );
-
-  useDailyEvent(
-    "participant-joined",
-    useCallback((ev) => console.log("[daily] participant-joined", ev?.participant?.user_name, ev?.participant?.session_id), [])
-  );
-
-  useDailyEvent(
-    "track-started",
-    useCallback((ev) => console.log("[daily] track-started", ev?.participant?.user_name, ev?.track?.kind), [])
-  );
-
-  useDailyEvent(
-    "error",
-    useCallback((ev) => console.error("[daily] error", ev), [])
+    useCallback(() => setPhase("live"), [])
   );
 
   useDailyEvent(
     "left-meeting",
     useCallback(() => setPhase((p) => (p === "live" ? "ended" : p)), [])
+  );
+
+  useDailyEvent(
+    "error",
+    useCallback((ev: unknown) => console.error("daily error", ev), [])
   );
 
   const connect = useCallback(async () => {
@@ -283,11 +270,6 @@ function Inner() {
           {phase === "live" && (remoteIds.length > 0 ? "Live" : "Waiting for Mira…")}
           {phase === "ended" && "Call ended"}
         </p>
-        {live && (
-          <p className="mt-1 text-[10px] text-[color:var(--color-mute)] tabular-nums">
-            participants: {remoteIds.length}
-          </p>
-        )}
       </section>
 
       <section className="mt-10 flex-1 min-h-[240px]">
