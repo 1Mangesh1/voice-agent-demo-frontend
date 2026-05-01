@@ -89,6 +89,9 @@ export function SummaryView({
           <p className="mt-1 text-[14px] tabular-nums text-[color:var(--color-ink)]">
             {data?.cost_usd != null ? `$${data.cost_usd.toFixed(3)}` : "—"}
           </p>
+          <p className="text-[11px] tabular-nums text-[color:var(--color-mute)]">
+            {data?.cost_inr != null ? `₹${data.cost_inr.toFixed(2)}` : ""}
+          </p>
         </div>
         <div>
           <p className="uppercase tracking-[0.2em]">stamped</p>
