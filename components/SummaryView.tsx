@@ -23,7 +23,7 @@ export function SummaryView({
           {confirmed.length}
         </span>
         <span className="text-[14px] text-[color:var(--color-ink-2)]">
-          {confirmed.length === 1 ? "appointment booked" : "appointments booked"}
+          {confirmed.length === 1 ? "appointment on file" : "appointments on file"}
         </span>
       </div>
 

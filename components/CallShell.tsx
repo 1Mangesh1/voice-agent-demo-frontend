@@ -109,7 +109,11 @@ function Inner() {
           if (toolTimerRef.current) window.clearTimeout(toolTimerRef.current);
 
           const result = await runTool(name, args);
-          sendRespond(`${TOOL_PREFIX} ${name} ${JSON.stringify(result)}`);
+          sendRespond(
+            `${TOOL_PREFIX} The ${name} tool returned: ${JSON.stringify(result)}. ` +
+              `Use this data in your next reply. If it lists appointments, read them aloud. ` +
+              `If ok is false, recover gracefully.`
+          );
 
           const ok = result?.ok === true;
           setTool({
