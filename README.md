@@ -1,34 +1,77 @@
 # voice-agent-demo-frontend
 
-Next.js 16 App Router · LiveKit React · Tailwind v4 · Motion · animated SVG avatar.
+Next.js 16 + Tailwind v4 + Daily React. Two pages: a landing screen and the
+call screen. The call screen is where everything happens.
+
+## What happens when you press Start
+
+1. `POST /tavus/start` on the backend → returns a Daily room URL.
+2. Daily call object joins the room (mic on, camera off).
+3. Tavus's replica (Mira) joins the same room a few seconds later. Her video
+   shows in the orb; her audio plays through `<DailyAudio />`.
+4. Mira talks. Her LLM decides to call a tool — Tavus broadcasts a
+   `conversation.tool_call` Daily app-message.
+5. The frontend dispatches it to `POST /tools/{name}` on the backend, gets a
+   JSON result, and broadcasts it back as a `conversation.respond` event.
+   Mira reads it out loud as if it were the next user turn.
+6. Every utterance is logged into the transcript panel and posted to
+   `/transcript` so the summary endpoint has it later.
+7. Press End → `daily.leave()` → `POST /summary` → the post-call view shows
+   the count of confirmed bookings, Gemini's bullet recap, and the appointments
+   on file.
 
 ## Layout
 
-| Path | Purpose |
-| --- | --- |
-| `app/page.tsx` | Landing — "A voice that listens, books, remembers." |
-| `app/call/page.tsx` | The call interface (client-only). |
-| `app/api/token/route.ts` | Mints LiveKit JWTs (server). |
-| `components/Avatar.tsx` | Stylized SVG portrait. Audio-amplitude-driven mouth + brow. Idle blink. |
-| `components/CallShell.tsx` | Joins room, listens for tool/transcript events, manages phases. |
-| `components/ToolFeed.tsx` | Live ledger of tool calls — running pulse → confirmed mark. |
-| `components/Transcript.tsx` | Live two-column transcript. |
-| `components/SummaryView.tsx` | Post-call summary + appointment list. |
-
-## Local run
-
-```bash
-pnpm install   # or: npm install
-cp .env.example .env.local   # fill in keys
-pnpm dev       # http://localhost:3000
+```
+app/
+  page.tsx          landing
+  call/page.tsx     mounts <CallShell />
+components/
+  CallShell.tsx     Daily room lifecycle, tool dispatch, phase machine
+  Avatar.tsx        Daniel's video tile (or breathing orb fallback)
+  Transcript.tsx    centered conversation, color-coded
+  SummaryView.tsx   numeral-led recap + appointments list
+lib/
+  types.ts, labels.ts
 ```
 
-Backend (separate repo) must be running on `NEXT_PUBLIC_BACKEND_URL` (default `http://localhost:8000`) for `/summary` to work.
+## Look
 
-## Avatar lip-sync
+Single sans (Geist), paper white, near-black, one persimmon signal color.
+The orb is a circle; when Mira's video track arrives it fills with her face,
+otherwise it breathes in place. No drop shadows, no glassmorphism, no
+serifs. The transcript is a centered conversation — Mira left in ink, you
+right in persimmon. Every spacing decision is in `app/globals.css`.
 
-Free, no signup. A Web Audio AnalyserNode reads RMS amplitude from Mira's audio track and maps it to mouth aperture. Not phoneme-perfect, but motion follows speech naturally and avoids the cost / setup of paid avatar services. Replaces TalkingHead / Tavus / Beyond Presence for the time-boxed demo. Swap to a 3D avatar later by replacing `components/Avatar.tsx`.
+## Run it locally
+
+```bash
+npm install
+echo "NEXT_PUBLIC_BACKEND_URL=http://localhost:8000" > .env.local
+npm run dev
+```
+
+Backend (separate repo) needs to be running for `/tavus/start`, `/tools/*`
+and `/summary` to work.
 
 ## Deploy
 
-Vercel: `vercel link`, push, set env vars from `.env.example`. `LIVEKIT_API_KEY`/`SECRET` must be set so `/api/token` can sign JWTs.
+```
+vercel --prod
+```
+
+`NEXT_PUBLIC_BACKEND_URL` must be set on Vercel — that's the only env var the
+frontend needs.
+
+## Notes
+
+- Tavus runs the whole STT → LLM → TTS pipeline. The frontend only owns the
+  UI and the tool dispatch loop. That keeps this repo small and the surface
+  area minimal.
+- Daily defaults the call object to subscribe to all remote tracks, so as
+  soon as Mira joins her video and audio just arrive — `<DailyVideo />` and
+  `<DailyAudio />` handle the rest.
+- The tool ticker above the orb shows the most recent tool name (e.g.
+  "Booking") and fades after a few seconds. Useful for live demo legibility.
+- An earlier version used LiveKit + a custom SVG portrait with mouth
+  animation. The git history walks through the swap to Tavus.
