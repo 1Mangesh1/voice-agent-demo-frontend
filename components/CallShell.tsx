@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import DailyIframe, { DailyCall } from "@daily-co/daily-js";
-import { DailyProvider, useDaily, useDailyEvent } from "@daily-co/daily-react";
+import { DailyAudio, DailyProvider, useDaily, useDailyEvent } from "@daily-co/daily-react";
 import { Avatar } from "./Avatar";
 import { Transcript } from "./Transcript";
 import { SummaryView } from "./SummaryView";
@@ -244,6 +244,8 @@ function Inner() {
       <section className="mt-10 flex-1 min-h-[240px]">
         <Transcript turns={turns} />
       </section>
+
+      <DailyAudio />
     </main>
   );
 }
