@@ -52,6 +52,7 @@ function Inner() {
   const [tool, setTool] = useState<ToolTick | null>(null);
   const [turns, setTurns] = useState<TranscriptTurn[]>([]);
   const [summary, setSummary] = useState<SummaryPayload | null>(null);
+  const [startError, setStartError] = useState<string | null>(null);
   const conversationIdRef = useRef<string | null>(null);
   const toolTimerRef = useRef<number | null>(null);
 
@@ -174,12 +175,25 @@ function Inner() {
     setTool(null);
     setTurns([]);
     setSummary(null);
+    setStartError(null);
 
     let conv: { conversation_id: string; conversation_url: string; meeting_token?: string };
     try {
-      conv = await fetch(`${BACKEND}/tavus/start`, { method: "POST" }).then((r) => r.json());
+      const r = await fetch(`${BACKEND}/tavus/start`, { method: "POST" });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const detail = String(body?.detail ?? "");
+        if (r.status === 402 || detail.includes("out_of_credits") || detail.includes("402")) {
+          setStartError("Tavus credits khatam — top up the Tavus account and try again.");
+        } else {
+          setStartError(`Couldn't start the call (${r.status}). ${detail || "Try again in a moment."}`);
+        }
+        setPhase("idle");
+        return;
+      }
+      conv = body;
     } catch (e) {
-      alert("Failed to start call");
+      setStartError("Couldn't reach the backend. Check your connection.");
       setPhase("idle");
       return;
     }
@@ -249,6 +263,20 @@ function Inner() {
   return (
     <main className="mx-auto flex min-h-dvh max-w-[680px] flex-col px-6 py-8">
       <Header phase={phase} onPrimary={live ? hangup : connect} />
+
+      {startError && phase === "idle" && (
+        <div
+          role="alert"
+          className="mt-6 rounded-md border px-4 py-3 text-[12px] leading-relaxed"
+          style={{
+            borderColor: "color-mix(in oklab, var(--color-signal) 40%, transparent)",
+            background: "color-mix(in oklab, var(--color-signal) 8%, transparent)",
+            color: "var(--color-ink)",
+          }}
+        >
+          {startError}
+        </div>
+      )}
 
       <section className="mt-12 flex flex-col items-center">
         <div className="h-5 text-[11px] uppercase tracking-[0.2em] text-[color:var(--color-signal)]">
